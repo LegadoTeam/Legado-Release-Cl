@@ -1,0 +1,838 @@
+name: Build Legado Tauri (Full Auto)
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@main
+
+      - name: Setup Git Auth
+        shell: bash
+        run: |
+          git config --global url."https://${{ secrets.TOKEN_MGZ }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Clone Source
+        shell: bash
+        run: |
+          git clone https://github.com/mgz0227/Legado-Tauri.git Source
+
+      - name: Move Project
+        shell: bash
+        run: |
+          mkdir build
+          cp -r Source/* build/
+          
+          
+
+      - name: Write pnpm workspace policy
+        shell: bash
+        run: |
+          cat > build/pnpm-workspace.yaml <<'EOF'
+          onlyBuiltDependencies:
+            - esbuild
+            - vue-demi
+          EOF
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@master
+        with:
+          version: 10.33.0
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@main
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: build/pnpm-lock.yaml
+
+      - name: Show versions
+        shell: bash
+        run: |
+          node -v
+          pnpm -v
+
+      - name: Install Dependencies
+        shell: bash
+        run: |
+          cd build
+          pnpm install --no-frozen-lockfile
+
+     # - name: Type Check Frontend
+     #   shell: bash
+      #  run: |
+     #     cd build
+      #    pnpm vue-tsc --noEmit
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux dependencies
+        shell: bash
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            pkg-config \
+            libglib2.0-dev \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+          pkg-config --modversion glib-2.0
+          pkg-config --cflags glib-2.0
+          pkg-config --libs glib-2.0
+
+      - name: Build Tauri App
+        shell: bash
+        env:
+          CARGO_BUILD_JOBS: 1
+          RUSTFLAGS: -C debuginfo=0
+        run: |
+          cd build
+          pnpm tauri build
+
+      - name: Pack binary with dist
+        shell: bash
+        run: |
+          mkdir -p package/legado_tauri
+          cp build/src-tauri/target/release/legado_tauri package/legado_tauri/
+          cp -r build/dist package/legado_tauri/dist
+          cd package
+          zip -r Legado-Linux-with-dist.zip legado_tauri
+
+      - name: Upload Binary With Dist Artifact
+        uses: actions/upload-artifact@main
+        with:
+          name: Legado-Linux-with-dist
+          path: package/Legado-Linux-with-dist.zip
+          
+
+      - name: Upload Dist Artifact
+        uses: actions/upload-artifact@main
+        with:
+          name: Legado-dist
+          path: |
+            build/dist/**
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@main
+        with:
+          name: legado-ubuntu-latest
+          path: |
+            build/src-tauri/target/release/bundle/appimage/*.AppImage
+            build/src-tauri/target/release/bundle/deb/*.deb
+            build/src-tauri/target/release/bundle/rpm/*.rpm
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@main
+
+      - name: Setup Git Auth
+        shell: bash
+        run: |
+          git config --global url."https://${{ secrets.TOKEN_MGZ }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Clone Source
+        shell: bash
+        run: |
+          git clone https://github.com/mgz0227/Legado-Tauri.git Source
+
+      - name: Move Project
+        shell: bash
+        run: |
+          mkdir build
+          cp -r Source/* build/
+          
+          
+
+      - name: Write pnpm workspace policy
+        shell: bash
+        run: |
+          cat > build/pnpm-workspace.yaml <<'EOF'
+          onlyBuiltDependencies:
+            - esbuild
+            - vue-demi
+          EOF
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@master
+        with:
+          version: 10.33.0
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@main
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: build/pnpm-lock.yaml
+
+      - name: Show versions
+        shell: bash
+        run: |
+          node -v
+          pnpm -v
+
+      - name: Install Dependencies
+        shell: bash
+        run: |
+          cd build
+          pnpm install --no-frozen-lockfile
+
+    #  - name: Type Check Frontend
+    #    shell: bash
+    #    run: |
+     #     cd build
+      #    pnpm vue-tsc --noEmit
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Debug Cargo profile
+        shell: bash
+        run: |
+          echo "===== build/src-tauri/Cargo.toml ====="
+          cat build/src-tauri/Cargo.toml
+
+      - name: Build Tauri App
+        shell: bash
+        env:
+          CARGO_BUILD_JOBS: 1
+          RUSTFLAGS: -C debuginfo=0
+          CARGO_PROFILE_RELEASE_OPT_LEVEL: 0
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 1
+          CARGO_PROFILE_RELEASE_LTO: "false"
+          CARGO_PROFILE_RELEASE_INCREMENTAL: "false"
+        run: |
+          cd build
+          pnpm tauri build
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@main
+        with:
+          name: legado-windows-latest
+          path: |
+            build/src-tauri/target/release/bundle/nsis/*.exe
+            build/src-tauri/target/release/bundle/msi/*.msi
+
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@main
+
+      - name: Setup Git Auth
+        shell: bash
+        run: |
+          git config --global url."https://${{ secrets.TOKEN_MGZ }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Clone Source
+        shell: bash
+        run: |
+          git clone https://github.com/mgz0227/Legado-Tauri.git Source
+
+      - name: Move Project
+        shell: bash
+        run: |
+          mkdir build
+          cp -r Source/* build/
+          
+          
+
+      - name: Write pnpm workspace policy
+        shell: bash
+        run: |
+          cat > build/pnpm-workspace.yaml <<'EOF'
+          onlyBuiltDependencies:
+            - esbuild
+            - vue-demi
+          EOF
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@master
+        with:
+          version: 10.33.0
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@main
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: build/pnpm-lock.yaml
+
+      - name: Show versions
+        shell: bash
+        run: |
+          node -v
+          pnpm -v
+
+      - name: Install Dependencies
+        shell: bash
+        run: |
+          cd build
+          pnpm install --no-frozen-lockfile
+
+    #  - name: Type Check Frontend
+     #   shell: bash
+      #  run: |
+       #   cd build
+        #  pnpm vue-tsc --noEmit
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Tauri App
+        shell: bash
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+          CARGO_BUILD_JOBS: 1
+          RUSTFLAGS: -C debuginfo=0
+        run: |
+          cd build
+          pnpm tauri build
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@main
+        with:
+          name: legado-macos-latest
+          path: |
+            build/src-tauri/target/release/bundle/dmg/*.dmg
+  build-android:
+    name: Build Android
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@main
+
+      - name: Setup Git Auth
+        shell: bash
+        run: |
+          git config --global url."https://${{ secrets.TOKEN_MGZ }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Clone Source
+        shell: bash
+        run: |
+          git clone https://github.com/mgz0227/Legado-Tauri.git Source
+
+      - name: Move Project
+        shell: bash
+        run: |
+          mkdir build
+          cp -r Source/* build/
+          
+          
+
+      - name: Write pnpm workspace policy
+        shell: bash
+        run: |
+          cat > build/pnpm-workspace.yaml <<'EOF'
+          onlyBuiltDependencies:
+            - unplugin-auto-import
+            - unplugin-vue-components
+            - esbuild
+            - vue-demi
+          EOF
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@master
+        with:
+          version: 10.33.0
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@main
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: build/pnpm-lock.yaml
+
+      - name: Setup Java
+        uses: actions/setup-java@main
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@main
+        with:
+          packages: >-
+            platform-tools
+            build-tools;35.0.0
+            platforms;android-35
+            ndk;27.0.12077973
+            cmdline-tools;latest
+
+      - name: Show versions
+        shell: bash
+        run: |
+          node -v
+          pnpm -v
+          java -version
+          sdkmanager --list | head -n 40 || true
+
+      - name: Install Dependencies
+        shell: bash
+        run: |
+          cd build
+          pnpm install --no-frozen-lockfile
+
+      # - name: Type Check Frontend
+      #   shell: bash
+      #   run: |
+      #     cd build
+      #     pnpm vue-tsc --noEmit
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add Rust Android targets
+        shell: bash
+        run: |
+          rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+
+      - name: Set Android env
+        shell: bash
+        run: |
+          echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=/usr/local/lib/android/sdk" >> $GITHUB_ENV
+          NDK_VERSION=$(ls -1 /usr/local/lib/android/sdk/ndk | sort -V | tail -n 1)
+          echo "NDK_HOME=/usr/local/lib/android/sdk/ndk/$NDK_VERSION" >> $GITHUB_ENV
+          echo "JAVA_HOME=$JAVA_HOME" >> $GITHUB_ENV
+          echo "BUILD_TOOLS_DIR=/usr/local/lib/android/sdk/build-tools/35.0.0" >> $GITHUB_ENV
+
+      - name: Debug Android env
+        shell: bash
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          echo "NDK_HOME=$NDK_HOME"
+          echo "BUILD_TOOLS_DIR=$BUILD_TOOLS_DIR"
+          test -d "$ANDROID_HOME"
+          test -d "$NDK_HOME"
+          test -f "$BUILD_TOOLS_DIR/apksigner"
+
+      - name: Decode Android keystore
+        shell: bash
+        run: |
+          echo "${{ secrets.APK_RELEASE_KEY_STORE }}" | base64 --decode > /tmp/key.jks
+          test -s /tmp/key.jks
+
+      - name: Write key.properties
+        shell: bash
+        run: |
+          cat > build/src-tauri/gen/android/key.properties <<EOF
+          keyAlias=${{ secrets.APK_RELEASE_KEY_ALIAS }}
+          keyPassword=${{ secrets.APK_RELEASE_KEY_PASSWORD }}
+          storeFile=/tmp/key.jks
+          storePassword=${{ secrets.APK_RELEASE_STORE_PASSWORD }}
+          EOF
+
+      - name: Build Android APK
+        shell: bash
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+          CARGO_BUILD_JOBS: 1
+          RUSTFLAGS: -C debuginfo=0
+        run: |
+          cd build
+          pnpm tauri android build --apk --target aarch64
+
+      - name: Check APK output
+        shell: bash
+        run: |
+          find build/src-tauri/gen/android/app/build/outputs/apk -type f -name "*.apk"
+          test -n "$(find build/src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print -quit)"
+
+      - name: Verify APK signature
+        shell: bash
+        run: |
+          set -e
+
+          find build/src-tauri/gen/android/app/build/outputs/apk -type f -name "*.apk" -print0 | while IFS= read -r -d '' apk; do
+            "$BUILD_TOOLS_DIR/apksigner" verify --verbose "$apk"
+          done
+
+      - name: Upload Android Artifact
+        uses: actions/upload-artifact@main
+        with:
+          name: legado-android
+          path: |
+            build/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+
+  build-Harmony:
+    name: Build Harmony
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@main
+
+      - name: Setup Git Auth
+        shell: bash
+        run: |
+          git config --global url."https://${{ secrets.TOKEN_MGZ }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Clone Source
+        shell: bash
+        run: |
+          git clone https://github.com/mgz0227/Legado-Tauri.git Source
+
+      - name: Move Project
+        shell: bash
+        run: |
+          mkdir build
+          cp -r Source/* build/
+          
+          
+
+      - name: Write pnpm workspace policy
+        shell: bash
+        run: |
+          cat > build/pnpm-workspace.yaml <<'EOF'
+          onlyBuiltDependencies:
+            - esbuild
+            - vue-demi
+          EOF
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@master
+        with:
+          version: 10.33.0
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@main
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: build/pnpm-lock.yaml
+
+      - name: Show versions
+        shell: bash
+        run: |
+          node -v
+          pnpm -v
+
+      - name: Install Dependencies
+        shell: bash
+        run: |
+          cd build
+          pnpm install --no-frozen-lockfile
+
+     # - name: Type Check Frontend
+     #   shell: bash
+      #  run: |
+     #     cd build
+      #    pnpm vue-tsc --noEmit
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux dependencies
+        shell: bash
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            pkg-config \
+            libglib2.0-dev \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+          pkg-config --modversion glib-2.0
+          pkg-config --cflags glib-2.0
+          pkg-config --libs glib-2.0
+
+      - name: Build Tauri App
+        shell: bash
+        env:
+          CARGO_BUILD_JOBS: 1
+          RUSTFLAGS: -C debuginfo=0
+        run: |
+          cd build
+          # 在主项目根目录
+          pnpm build:harmony
+
+      - name: Pack binary with dist
+        shell: bash
+        run: |
+          mkdir -p package/legado_Harmony
+          cp -r build/dist package/legado_Harmony/dist
+          cd package
+          zip -r Legado-Harmony-with-dist.zip legado_Harmony
+
+      - name: Upload Binary With Dist Artifact
+        uses: actions/upload-artifact@main
+        with:
+          name: Legado-Harmony-with-dist
+          path: package/Legado-Harmony-with-dist.zip
+          
+
+      - name: Upload Dist Artifact
+        uses: actions/upload-artifact@main
+        with:
+          name: Legado-dist
+          path: |
+            build/dist/**
+
+
+  build-ios:
+    name: Build iOS IPA Unsigned
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@main
+
+      - name: Setup Git Auth
+        shell: bash
+        run: |
+          git config --global url."https://${{ secrets.TOKEN_MGZ }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Clone Source
+        shell: bash
+        run: |
+          git clone https://github.com/mgz0227/Legado-Tauri.git Source
+
+      - name: Move Project
+        shell: bash
+        run: |
+          mkdir build
+          cp -r Source/* build/
+
+      - name: Write pnpm workspace policy
+        shell: bash
+        run: |
+          cat > build/pnpm-workspace.yaml <<'EOF'
+          onlyBuiltDependencies:
+            - unplugin-auto-import
+            - unplugin-vue-components
+            - esbuild
+            - vue-demi
+          EOF
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@master
+        with:
+          version: 10.33.0
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@main
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: build/pnpm-lock.yaml
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add Rust iOS target
+        shell: bash
+        run: |
+          rustup target add aarch64-apple-ios
+
+      - name: Select Xcode
+        shell: bash
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          xcodebuild -version
+
+      - name: Show versions
+        shell: bash
+        run: |
+          node -v
+          pnpm -v
+          rustc -V
+          cargo -V
+          xcodebuild -version
+
+      - name: Install Dependencies
+        shell: bash
+        run: |
+          cd build
+          pnpm install --no-frozen-lockfile
+
+      # Signing disabled: no Apple API key, no Team ID, no export method.
+      # Keep this block only as a reminder for future signed builds.
+      # - name: Decode Apple API key
+      #   shell: bash
+      #   run: |
+      #     mkdir -p "$RUNNER_TEMP/apple-private-keys"
+      #     echo "${{ secrets.APPLE_API_PRIVATE_KEY_BASE64 }}" | base64 --decode > "$RUNNER_TEMP/apple-private-keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8"
+      #     test -s "$RUNNER_TEMP/apple-private-keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8"
+
+      - name: Init iOS project when missing
+        shell: bash
+        run: |
+          cd build
+          if [ ! -d "src-tauri/gen/apple" ]; then
+            pnpm tauri ios init
+          fi
+
+      - name: Build iOS IPA without signing
+        shell: bash
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+          CARGO_BUILD_JOBS: 1
+          RUSTFLAGS: -C debuginfo=0
+          # Signing env is intentionally disabled.
+          # APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          # APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
+          # APPLE_API_KEY_PATH: ${{ runner.temp }}/apple-private-keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
+          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          # IOS_EXPORT_METHOD: app-store-connect
+        run: |
+          cd build
+
+          # Unsigned build: this produces a compile artifact only.
+          # It cannot be installed on real devices or submitted to App Store without signing.
+          set +e
+          pnpm tauri ios build -- CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+          BUILD_STATUS=$?
+          set -e
+
+          if find src-tauri/gen/apple/build -type f -name "*.ipa" -print -quit | grep -q .; then
+            echo "Tauri generated an IPA."
+            exit 0
+          fi
+
+          echo "No IPA generated by Tauri directly. Trying to package unsigned .app as IPA..."
+          APP_PATH="$(find src-tauri/gen/apple/build -type d -name "*.app" -print -quit)"
+          if [ -z "$APP_PATH" ]; then
+            echo "No .app found. Tauri build exit code: $BUILD_STATUS"
+            exit "$BUILD_STATUS"
+          fi
+
+          rm -rf src-tauri/gen/apple/build/unsigned
+          mkdir -p src-tauri/gen/apple/build/unsigned/Payload
+          cp -R "$APP_PATH" src-tauri/gen/apple/build/unsigned/Payload/
+          (cd src-tauri/gen/apple/build/unsigned && zip -r ../Legado-unsigned.ipa Payload)
+          test -s src-tauri/gen/apple/build/Legado-unsigned.ipa
+
+      - name: Check IPA output
+        shell: bash
+        run: |
+          find build/src-tauri/gen/apple/build -type f -name "*.ipa"
+          test -n "$(find build/src-tauri/gen/apple/build -type f -name '*.ipa' -print -quit)"
+
+      - name: Upload iOS Artifact
+        uses: actions/upload-artifact@main
+        with:
+          name: legado-ios-unsigned
+          path: |
+            build/src-tauri/gen/apple/build/**/*.ipa
+
+  release:
+    name: Release
+    needs:
+      - build-linux
+      - build-windows
+      - build-macos
+      - build-android
+      - build-ios
+      - build-Harmony
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@main
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.TOKEN_MGZ }}
+
+      - name: Download Artifacts
+        uses: actions/download-artifact@main
+
+      - name: Generate release tag
+        id: meta
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            TAG_NAME="${GITHUB_REF_NAME}"
+          else
+            TAG_NAME="Beta-3.26.$(TZ='Asia/Shanghai' date +'%m%d%H%M')"
+          fi
+
+          echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
+          echo "release_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Create Git tag when no tag input
+        if: github.ref_type != 'tag'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git rev-parse "${{ steps.meta.outputs.tag_name }}" >/dev/null 2>&1; then
+            echo "Tag already exists: ${{ steps.meta.outputs.tag_name }}"
+          else
+            git tag "${{ steps.meta.outputs.tag_name }}"
+            git push origin "${{ steps.meta.outputs.tag_name }}"
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@master
+        with:
+          tag_name: ${{ steps.meta.outputs.tag_name }}
+          name: ${{ steps.meta.outputs.release_name }}
+          files: |
+            **/Legado-Linux-with-dist.zip
+            **/Legado-Harmony-with-dist.zip
+            **/*.apk
+            **/*.ipa
+            **/*.AppImage
+            **/*.deb
+            **/*.rpm
+            **/*.dmg
+            **/*.exe
+            **/*.msi
+        env:
+          GITHUB_TOKEN: ${{ secrets.TOKEN_MGZ }}
+
+      - name: Delete workflow runs
+        uses: mgz0227/delete-workflow-runs@main
+        continue-on-error: true
+        with:
+          token: ${{ secrets.TOKEN_MGZ }}
+          retain_days: 100
+          keep_minimum_runs: 0
+
+      - name: Remove old Releases
+        uses: mgz0227/delete-older-releases@master
+        continue-on-error: true
+        if: env.UPLOAD_FIRMWARE_FOR_RELEASE == 'true' && !cancelled()
+        with:
+          keep_latest: 15
+          delete_tags: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.TOKEN_MGZ }}
