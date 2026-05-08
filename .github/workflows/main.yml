@@ -713,13 +713,14 @@ jobs:
       #     echo "${{ secrets.APPLE_API_PRIVATE_KEY_BASE64 }}" | base64 --decode > "$RUNNER_TEMP/apple-private-keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8"
       #     test -s "$RUNNER_TEMP/apple-private-keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8"
 
-      - name: Init iOS project when missing
+      - name: Recreate iOS project
         shell: bash
         run: |
           cd build
-          if [ ! -d "src-tauri/gen/apple" ]; then
-            pnpm tauri ios init --ci
-          fi
+
+          rm -rf src-tauri/gen/apple
+
+          pnpm tauri ios init --ci
 
       - name: Build unsigned iOS app and package IPA
         shell: bash
