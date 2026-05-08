@@ -675,6 +675,28 @@ jobs:
           cargo -V
           xcodebuild -version
 
+      - name: Patch tauri config for CI
+        shell: bash
+        run: |
+          cd build
+
+          node <<'EOF'
+          const fs = require('fs')
+
+          const path = 'src-tauri/tauri.conf.json'
+
+          const config = JSON.parse(fs.readFileSync(path, 'utf8'))
+
+          if (config.build) {
+            delete config.build.devUrl
+            delete config.build.beforeDevCommand
+          }
+
+          fs.writeFileSync(path, JSON.stringify(config, null, 2))
+
+          console.log('Patched tauri.conf.json for CI')
+          EOF
+
       - name: Install Dependencies
         shell: bash
         run: |
