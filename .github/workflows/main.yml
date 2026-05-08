@@ -679,6 +679,7 @@ jobs:
         shell: bash
         run: |
           cd build
+          cargo install tauri-cli --locked || true
           pnpm install --no-frozen-lockfile
 
       # Signing disabled: no Apple API key, no Team ID, no export method.
@@ -695,12 +696,16 @@ jobs:
         run: |
           cd build
           if [ ! -d "src-tauri/gen/apple" ]; then
-            pnpm tauri ios init
+            pnpm tauri ios init --ci
           fi
 
       - name: Build unsigned iOS app and package IPA
         shell: bash
         env:
+          CI: true
+          TAURI_SKIP_DEVSERVER_CHECK: true
+          TAURI_ENV_PLATFORM: ios
+          TAURI_ENV_PLATFORM_VERSION: ios
           NODE_OPTIONS: --max-old-space-size=6144
           CARGO_BUILD_JOBS: 1
           RUSTFLAGS: -C debuginfo=0
@@ -717,7 +722,10 @@ jobs:
           # Build frontend first. Direct xcodebuild will run the Tauri/Rust script phase,
           # but it will not run the frontend build command for us.
           pnpm build
-
+          export CI=true
+          export TAURI_SKIP_DEVSERVER_CHECK=true
+          export TAURI_ENV_PLATFORM=ios
+          export TAURI_ENV_PLATFORM_VERSION=ios
           APPLE_DIR="src-tauri/gen/apple"
           WORKSPACE="$(find "$APPLE_DIR" -type d -name "*.xcworkspace" -print -quit)"
           if [ -z "$WORKSPACE" ]; then
@@ -740,6 +748,8 @@ jobs:
           # without the no-signing build settings, which makes Xcode fail with
           # "requires a development team". Call xcodebuild directly and append
           # the no-signing settings at the end so Xcode receives them.
+          CI=true \
+          TAURI_SKIP_DEVSERVER_CHECK=true \
           xcodebuild \
             -workspace "$WORKSPACE" \
             -scheme "$SCHEME" \
