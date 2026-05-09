@@ -722,6 +722,17 @@ jobs:
 
           pnpm tauri ios init --ci
 
+      - name: Remove broken Tauri xcode-script
+        shell: bash
+        run: |
+          cd build
+
+          PBXPROJ=$(find src-tauri/gen/apple -name project.pbxproj | head -n1)
+
+          echo "Patching: $PBXPROJ"
+
+          sed -i '' '/Build Rust Code/,/};/d' "$PBXPROJ"
+
       - name: Build unsigned iOS app and package IPA
         shell: bash
         env:
@@ -745,6 +756,15 @@ jobs:
           # Build frontend first. Direct xcodebuild will run the Tauri/Rust script phase,
           # but it will not run the frontend build command for us.
           pnpm build
+
+          cd src-tauri
+
+          cargo build \
+            --release \
+            --target aarch64-apple-ios
+
+          cd ..
+
           export CI=true
           export TAURI_SKIP_DEVSERVER_CHECK=true
           export TAURI_ENV_PLATFORM=ios
