@@ -715,12 +715,12 @@ jobs:
           # The source uses zip::write::SimpleFileOptions, which matches zip 2.x.
           if ! grep -q '^zip *=' src-tauri/Cargo.toml; then
             sed -i '' '/^\[dependencies\]/a\
-  zip = "2"
-  ' src-tauri/Cargo.toml
-            echo "Added zip = \"2\" to src-tauri/Cargo.toml"
-          else
-            echo "zip dependency already exists"
-          fi
+            zip = "2"
+            ' src-tauri/Cargo.toml
+                      echo "Added zip = \"2\" to src-tauri/Cargo.toml"
+                    else
+                      echo "zip dependency already exists"
+                    fi
 
           # 2. Tauri dialog API compatibility.
           # The app wants folder/directory selection, not file selection.
