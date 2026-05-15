@@ -704,6 +704,51 @@ jobs:
           cargo install tauri-cli --locked || true
           pnpm install --no-frozen-lockfile
 
+      - name: Patch Rust/Tauri compile errors
+        shell: bash
+        run: |
+          cd build
+
+          echo "Patching Rust/Tauri compile errors..."
+
+          # 1. Add missing zip crate.
+          # The source uses zip::write::SimpleFileOptions, which matches zip 2.x.
+          if ! grep -q '^zip *=' src-tauri/Cargo.toml; then
+            sed -i '' '/^\[dependencies\]/a\
+  zip = "2"
+  ' src-tauri/Cargo.toml
+            echo "Added zip = \"2\" to src-tauri/Cargo.toml"
+          else
+            echo "zip dependency already exists"
+          fi
+
+          # 2. Tauri dialog API compatibility.
+          # The app wants folder/directory selection, not file selection.
+          if [ -f src-tauri/src/booksource/mod.rs ]; then
+            sed -i '' 's/\.pick_folder(/.pick_directory(/g' src-tauri/src/booksource/mod.rs
+          fi
+
+          if [ -f src-tauri/src/lib.rs ]; then
+            sed -i '' 's/\.pick_folder(/.pick_directory(/g' src-tauri/src/lib.rs
+          fi
+
+          # 3. Remove unsupported WebviewWindowBuilder.decorations(true).
+          # Decorations are normally enabled by default.
+          if [ -f src-tauri/src/browser_probe_tauri/create.rs ]; then
+            sed -i '' '/\.decorations(true)/d' src-tauri/src/browser_probe_tauri/create.rs
+          fi
+
+          echo "Patch complete"
+
+          echo "Current zip dependency:"
+          grep '^zip *=' src-tauri/Cargo.toml || true
+
+          echo "Checking remaining pick_folder references:"
+          grep -R "pick_folder" src-tauri/src || true
+
+          echo "Checking remaining decorations(true) references:"
+          grep -R "decorations(true)" src-tauri/src || true
+
       # Signing disabled: no Apple API key, no Team ID, no export method.
       # Keep this block only as a reminder for future signed builds.
       # - name: Decode Apple API key
@@ -728,6 +773,12 @@ jobs:
           cd build
 
           PBXPROJ=$(find src-tauri/gen/apple -name project.pbxproj | head -n1)
+
+          if [ -z "$PBXPROJ" ]; then
+            echo "No project.pbxproj found"
+            find src-tauri/gen/apple -maxdepth 5 -type f | sort
+            exit 1
+          fi
 
           echo "Patching: $PBXPROJ"
 
@@ -769,11 +820,14 @@ jobs:
           export TAURI_SKIP_DEVSERVER_CHECK=true
           export TAURI_ENV_PLATFORM=ios
           export TAURI_ENV_PLATFORM_VERSION=ios
+
           APPLE_DIR="src-tauri/gen/apple"
           WORKSPACE="$(find "$APPLE_DIR" -type d -name "*.xcworkspace" -print -quit)"
+
           if [ -z "$WORKSPACE" ]; then
             WORKSPACE="$(find "$APPLE_DIR" -type d -path "*.xcodeproj/project.xcworkspace" -print -quit)"
           fi
+
           if [ -z "$WORKSPACE" ]; then
             echo "No Xcode workspace found under $APPLE_DIR"
             find "$APPLE_DIR" -maxdepth 3 -type d | sort
@@ -811,6 +865,7 @@ jobs:
             AD_HOC_CODE_SIGNING_ALLOWED=NO
 
           APP_PATH="$(find "$DERIVED_DATA/Build/Products" -type d -name "*.app" -path "*iphoneos*" -print -quit)"
+
           if [ -z "$APP_PATH" ]; then
             echo "No unsigned .app found after xcodebuild. Products:"
             find "$DERIVED_DATA/Build/Products" -maxdepth 4 -print || true
@@ -818,7 +873,11 @@ jobs:
           fi
 
           cp -R "$APP_PATH" "$OUT_DIR/Payload/"
-          (cd "$OUT_DIR" && zip -r ../Legado-unsigned.ipa Payload)
+
+          cd "$OUT_DIR"
+          zip -r ../Legado-unsigned.ipa Payload
+          cd -
+
           test -s "$PWD/$APPLE_DIR/build/Legado-unsigned.ipa"
 
       - name: Check IPA output
