@@ -711,93 +711,69 @@ jobs:
 
           echo "Patching Rust/Tauri compile errors..."
 
-          LEGADO_UTILS_CARGO="src-tauri/crates/legado-utils/Cargo.toml"
-          ROOT_CARGO="src-tauri/Cargo.toml"
+          echo "Add zip dependency to the actual Rust package..."
+          cargo add zip@8 --manifest-path src-tauri/Cargo.toml --no-default-features --features deflate || true
 
-          if [ -f "$LEGADO_UTILS_CARGO" ]; then
-            if ! grep -q '^zip *=' "$LEGADO_UTILS_CARGO"; then
-              perl -0pi -e 's/\[dependencies\]\n/[dependencies]\nzip = "2"\n/' "$LEGADO_UTILS_CARGO"
-              echo "Added zip = \"2\" to $LEGADO_UTILS_CARGO"
-            else
-              echo "zip dependency already exists in $LEGADO_UTILS_CARGO"
-            fi
-          else
-            echo "Cannot find $LEGADO_UTILS_CARGO"
-            find src-tauri -name Cargo.toml -print
-            exit 1
+          if [ -f src-tauri/crates/legado-utils/Cargo.toml ]; then
+            cargo add zip@8 --manifest-path src-tauri/crates/legado-utils/Cargo.toml --no-default-features --features deflate || true
           fi
 
-          if [ -f "$ROOT_CARGO" ]; then
-            if ! grep -q '^zip *=' "$ROOT_CARGO"; then
-              perl -0pi -e 's/\[dependencies\]\n/[dependencies]\nzip = "2"\n/' "$ROOT_CARGO"
-              echo "Added zip = \"2\" to $ROOT_CARGO"
-            fi
-          fi
+          echo "Patch dialog API and window builder API..."
 
           node <<'EOF'
           const fs = require('fs')
 
-          const files = [
+          function patchFile(file, replacers) {
+            if (!fs.existsSync(file)) {
+              console.log(`Skip missing ${file}`)
+              return
+            }
+
+            let s = fs.readFileSync(file, 'utf8')
+            const before = s
+
+            for (const [from, to] of replacers) {
+              s = s.replace(from, to)
+            }
+
+            fs.writeFileSync(file, s)
+
+            if (s !== before) {
+              console.log(`Patched ${file}`)
+            } else {
+              console.log(`No change needed ${file}`)
+            }
+          }
+
+          const dialogFiles = [
             'src-tauri/src/booksource/mod.rs',
             'src-tauri/src/lib.rs',
           ]
 
-          for (const file of files) {
-            if (!fs.existsSync(file)) continue
-
-            let s = fs.readFileSync(file, 'utf8')
-
-            s = s.replace(
-              /\.set_title\(([^)]*)\)\s*\n\s*\.pick_folder\(/g,
-              '.set_title($1)\n            .set_directory(true)\n            .pick_file('
-            )
-
-            s = s.replace(
-              /\.set_title\(([^)]*)\)\s*\n\s*\.pick_directory\(/g,
-              '.set_title($1)\n            .set_directory(true)\n            .pick_file('
-            )
-
-            fs.writeFileSync(file, s)
-            console.log(`Patched dialog API in ${file}`)
+          for (const file of dialogFiles) {
+            patchFile(file, [
+              [/\.pick_directory\s*\(/g, '.pick_folders('],
+              [/\.pick_folder\s*\(/g, '.pick_folders('],
+            ])
           }
+
+          patchFile('src-tauri/src/browser_probe_tauri/create.rs', [
+            [/\.visible\(visible\)\s*\n\s*\.decorations\(true\);/g, '.visible(visible);'],
+            [/\.visible\(visible\)\s*\n\s*builder = builder/g, '.visible(visible);\n            builder = builder'],
+            [/\s*\.decorations\(true\)/g, ''],
+          ])
           EOF
 
-          node <<'EOF'
-          const fs = require('fs')
+          echo "Verify patches..."
 
-          const file = 'src-tauri/src/browser_probe_tauri/create.rs'
-
-          if (fs.existsSync(file)) {
-            let s = fs.readFileSync(file, 'utf8')
-
-            s = s.replace(
-              /\.visible\(visible\)\s*\n\s*\.decorations\(true\);/g,
-              '.visible(visible);'
-            )
-
-            s = s.replace(
-              /\.visible\(visible\)\s*\n\s*builder = builder/g,
-              '.visible(visible);\n            builder = builder'
-            )
-
-            s = s.replace(/\s*\.decorations\(true\)/g, '')
-
-            fs.writeFileSync(file, s)
-            console.log(`Patched decorations API in ${file}`)
-          }
-          EOF
-
-          echo "Zip dependency check:"
+          echo "zip lines:"
           find src-tauri -name Cargo.toml -print0 | xargs -0 grep -H '^zip *=' || true
 
-          echo "Remaining pick_folder references:"
-          grep -R "pick_folder" src-tauri/src || true
+          echo "dialog picker references:"
+          grep -R "pick_directory\|pick_folder\|pick_folders" src-tauri/src/booksource/mod.rs src-tauri/src/lib.rs || true
 
-          echo "Remaining pick_directory references:"
-          grep -R "pick_directory" src-tauri/src || true
-
-          echo "Remaining decorations(true) references:"
-          grep -R "decorations(true)" src-tauri/src || true
+          echo "visible/decorations nearby:"
+          grep -n "visible(visible)\|decorations(true)" src-tauri/src/browser_probe_tauri/create.rs || true
 
           echo "Patch complete"
 
