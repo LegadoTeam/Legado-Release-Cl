@@ -1066,7 +1066,7 @@ jobs:
       - build-windows
       - build-macos
       - build-android
-      - build-ios
+     # - build-ios
       - build-Harmony
     runs-on: ubuntu-latest
 
