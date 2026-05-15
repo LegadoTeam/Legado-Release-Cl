@@ -867,22 +867,88 @@ jobs:
 
           pnpm tauri ios init --ci
 
-      - name: Remove broken Tauri xcode-script
+      - name: Build unsigned iOS app and package IPA
         shell: bash
+        env:
+          CI: true
+          TAURI_SKIP_DEVSERVER_CHECK: true
+          TAURI_ENV_PLATFORM: ios
+          TAURI_ENV_PLATFORM_VERSION: ios
+          NODE_OPTIONS: --max-old-space-size=6144
+          CARGO_BUILD_JOBS: 1
+          RUSTFLAGS: -C debuginfo=0
         run: |
           cd build
 
-          PBXPROJ=$(find src-tauri/gen/apple -name project.pbxproj | head -n1)
+          pnpm build
 
-          if [ -z "$PBXPROJ" ]; then
-            echo "No project.pbxproj found"
-            find src-tauri/gen/apple -maxdepth 5 -type f | sort
+          cd src-tauri
+
+          cargo build \
+            --release \
+            --target aarch64-apple-ios
+
+          cd ..
+
+          export CI=true
+          export TAURI_SKIP_DEVSERVER_CHECK=true
+          export TAURI_ENV_PLATFORM=ios
+          export TAURI_ENV_PLATFORM_VERSION=ios
+
+          APPLE_DIR="src-tauri/gen/apple"
+          WORKSPACE="$(find "$APPLE_DIR" -type d -name "*.xcworkspace" -print -quit)"
+
+          if [ -z "$WORKSPACE" ]; then
+            WORKSPACE="$(find "$APPLE_DIR" -type d -path "*.xcodeproj/project.xcworkspace" -print -quit)"
+          fi
+
+          if [ -z "$WORKSPACE" ]; then
+            echo "No Xcode workspace found under $APPLE_DIR"
+            find "$APPLE_DIR" -maxdepth 3 -type d | sort
             exit 1
           fi
 
-          echo "Patching: $PBXPROJ"
+          SCHEME="legado_tauri_iOS"
+          DERIVED_DATA="$PWD/$APPLE_DIR/build/DerivedData"
+          OUT_DIR="$PWD/$APPLE_DIR/build/unsigned"
 
-          sed -i '' '/Build Rust Code/,/};/d' "$PBXPROJ"
+          rm -rf "$DERIVED_DATA" "$OUT_DIR"
+          mkdir -p "$OUT_DIR/Payload"
+
+          CI=true \
+          TAURI_SKIP_DEVSERVER_CHECK=true \
+          xcodebuild \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -sdk iphoneos \
+            -configuration release \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath "$DERIVED_DATA" \
+            build \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM= \
+            CODE_SIGN_IDENTITY= \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_ENTITLEMENTS= \
+            PROVISIONING_PROFILE_SPECIFIER= \
+            AD_HOC_CODE_SIGNING_ALLOWED=NO
+
+          APP_PATH="$(find "$DERIVED_DATA/Build/Products" -type d -name "*.app" -path "*iphoneos*" -print -quit)"
+
+          if [ -z "$APP_PATH" ]; then
+            echo "No unsigned .app found after xcodebuild. Products:"
+            find "$DERIVED_DATA/Build/Products" -maxdepth 4 -print || true
+            exit 1
+          fi
+
+          cp -R "$APP_PATH" "$OUT_DIR/Payload/"
+
+          cd "$OUT_DIR"
+          zip -r ../Legado-unsigned.ipa Payload
+          cd -
+
+          test -s "$PWD/$APPLE_DIR/build/Legado-unsigned.ipa"
 
       - name: Build unsigned iOS app and package IPA
         shell: bash
