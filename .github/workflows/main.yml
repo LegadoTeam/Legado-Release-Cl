@@ -711,69 +711,141 @@ jobs:
 
           echo "Patching Rust/Tauri compile errors..."
 
-          echo "Add zip dependency to the actual Rust package..."
-          cargo add zip@8 --manifest-path src-tauri/Cargo.toml --no-default-features --features deflate || true
-
-          if [ -f src-tauri/crates/legado-utils/Cargo.toml ]; then
-            cargo add zip@8 --manifest-path src-tauri/crates/legado-utils/Cargo.toml --no-default-features --features deflate || true
-          fi
-
-          echo "Patch dialog API and window builder API..."
-
           node <<'EOF'
           const fs = require('fs')
 
-          function patchFile(file, replacers) {
+          function read(file) {
+            return fs.readFileSync(file, 'utf8')
+          }
+
+          function write(file, text) {
+            fs.writeFileSync(file, text)
+          }
+
+          function patchCargoToml(file) {
+            if (!fs.existsSync(file)) {
+              console.error(`Missing ${file}`)
+              process.exit(1)
+            }
+
+            let s = read(file)
+
+            const depMatch = s.match(/(^|\n)\[dependencies\]\n([\s\S]*?)(?=\n\[|$)/)
+
+            if (!depMatch) {
+              s += '\n[dependencies]\nzip = { version = "8", default-features = false, features = ["deflate"] }\n'
+              write(file, s)
+              console.log(`Added [dependencies] and zip to ${file}`)
+              return
+            }
+
+            const depBlock = depMatch[2]
+
+            if (/^zip\s*=.*/m.test(depBlock)) {
+              s = s.replace(
+                /(^|\n)\[dependencies\]\n([\s\S]*?)(?=\n\[|$)/,
+                (full, prefix, body) => {
+                  const newBody = body.replace(
+                    /^zip\s*=.*$/m,
+                    'zip = { version = "8", default-features = false, features = ["deflate"] }'
+                  )
+                  return `${prefix}[dependencies]\n${newBody}`
+                }
+              )
+              console.log(`Updated existing zip dependency in ${file}`)
+            } else {
+              s = s.replace(
+                /(^|\n)\[dependencies\]\n/,
+                `$1[dependencies]\nzip = { version = "8", default-features = false, features = ["deflate"] }\n`
+              )
+              console.log(`Inserted zip dependency into ${file}`)
+            }
+
+            write(file, s)
+          }
+
+          function patchPicker(file) {
             if (!fs.existsSync(file)) {
               console.log(`Skip missing ${file}`)
               return
             }
 
-            let s = fs.readFileSync(file, 'utf8')
-            const before = s
+            let s = read(file)
 
-            for (const [from, to] of replacers) {
-              s = s.replace(from, to)
-            }
+            s = s.replace(/\.pick_directory\s*\(/g, '.pick_file(')
+            s = s.replace(/\.pick_folder\s*\(/g, '.pick_file(')
 
-            fs.writeFileSync(file, s)
-
-            if (s !== before) {
-              console.log(`Patched ${file}`)
-            } else {
-              console.log(`No change needed ${file}`)
-            }
+            write(file, s)
+            console.log(`Patched picker API in ${file}`)
           }
 
-          const dialogFiles = [
-            'src-tauri/src/booksource/mod.rs',
-            'src-tauri/src/lib.rs',
-          ]
+          function patchCreateRs(file) {
+            if (!fs.existsSync(file)) {
+              console.log(`Skip missing ${file}`)
+              return
+            }
 
-          for (const file of dialogFiles) {
-            patchFile(file, [
-              [/\.pick_directory\s*\(/g, '.pick_folders('],
-              [/\.pick_folder\s*\(/g, '.pick_folders('],
-            ])
+            let s = read(file)
+
+            s = s.replace(
+              /\.visible\(visible\)\s*\n\s*\.decorations\(true\);/g,
+              '.visible(visible);'
+            )
+
+            s = s.replace(
+              /\.visible\(visible\)\s*\n\s*builder = builder/g,
+              '.visible(visible);\n            builder = builder'
+            )
+
+            s = s.replace(
+              /\.visible\(visible\)(?!\s*;)/g,
+              '.visible(visible);'
+            )
+
+            s = s.replace(/\s*\.decorations\(true\)/g, '')
+
+            write(file, s)
+            console.log(`Patched window builder API in ${file}`)
           }
 
-          patchFile('src-tauri/src/browser_probe_tauri/create.rs', [
-            [/\.visible\(visible\)\s*\n\s*\.decorations\(true\);/g, '.visible(visible);'],
-            [/\.visible\(visible\)\s*\n\s*builder = builder/g, '.visible(visible);\n            builder = builder'],
-            [/\s*\.decorations\(true\)/g, ''],
-          ])
+          patchCargoToml('src-tauri/Cargo.toml')
+
+          if (fs.existsSync('src-tauri/crates/legado-utils/Cargo.toml')) {
+            patchCargoToml('src-tauri/crates/legado-utils/Cargo.toml')
+          }
+
+          patchPicker('src-tauri/src/booksource/mod.rs')
+          patchPicker('src-tauri/src/lib.rs')
+          patchCreateRs('src-tauri/src/browser_probe_tauri/create.rs')
           EOF
 
-          echo "Verify patches..."
+          echo "Verify root Cargo.toml zip dependency:"
+          awk '
+            /^\[dependencies\]$/ { in_deps=1; next }
+            /^\[/ { in_deps=0 }
+            in_deps && /^zip[[:space:]]*=/ { found=1; print }
+            END { exit found ? 0 : 1 }
+          ' src-tauri/Cargo.toml
 
-          echo "zip lines:"
-          find src-tauri -name Cargo.toml -print0 | xargs -0 grep -H '^zip *=' || true
+          echo "Verify no unsupported picker methods remain:"
+          if grep -R "pick_directory\|pick_folder" src-tauri/src/booksource/mod.rs src-tauri/src/lib.rs; then
+            echo "Unsupported picker method still exists"
+            exit 1
+          fi
 
-          echo "dialog picker references:"
-          grep -R "pick_directory\|pick_folder\|pick_folders" src-tauri/src/booksource/mod.rs src-tauri/src/lib.rs || true
+          echo "Verify visible(visible) line:"
+          grep -n "visible(visible)" src-tauri/src/browser_probe_tauri/create.rs || true
 
-          echo "visible/decorations nearby:"
-          grep -n "visible(visible)\|decorations(true)" src-tauri/src/browser_probe_tauri/create.rs || true
+          if grep -n "visible(visible)$" src-tauri/src/browser_probe_tauri/create.rs; then
+            echo "visible(visible) still has no semicolon"
+            exit 1
+          fi
+
+          echo "Verify no decorations(true) remains:"
+          if grep -R "decorations(true)" src-tauri/src/browser_probe_tauri/create.rs; then
+            echo "decorations(true) still exists"
+            exit 1
+          fi
 
           echo "Patch complete"
 
