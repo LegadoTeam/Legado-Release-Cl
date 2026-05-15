@@ -711,43 +711,95 @@ jobs:
 
           echo "Patching Rust/Tauri compile errors..."
 
-          # 1. Add missing zip crate.
-          # The source uses zip::write::SimpleFileOptions, which matches zip 2.x.
-          if ! grep -q '^zip *=' src-tauri/Cargo.toml; then
-            sed -i '' '/^\[dependencies\]/a\
-            zip = "2"
-            ' src-tauri/Cargo.toml
-                      echo "Added zip = \"2\" to src-tauri/Cargo.toml"
-                    else
-                      echo "zip dependency already exists"
-                    fi
+          LEGADO_UTILS_CARGO="src-tauri/crates/legado-utils/Cargo.toml"
+          ROOT_CARGO="src-tauri/Cargo.toml"
 
-          # 2. Tauri dialog API compatibility.
-          # The app wants folder/directory selection, not file selection.
-          if [ -f src-tauri/src/booksource/mod.rs ]; then
-            sed -i '' 's/\.pick_folder(/.pick_directory(/g' src-tauri/src/booksource/mod.rs
+          if [ -f "$LEGADO_UTILS_CARGO" ]; then
+            if ! grep -q '^zip *=' "$LEGADO_UTILS_CARGO"; then
+              perl -0pi -e 's/\[dependencies\]\n/[dependencies]\nzip = "2"\n/' "$LEGADO_UTILS_CARGO"
+              echo "Added zip = \"2\" to $LEGADO_UTILS_CARGO"
+            else
+              echo "zip dependency already exists in $LEGADO_UTILS_CARGO"
+            fi
+          else
+            echo "Cannot find $LEGADO_UTILS_CARGO"
+            find src-tauri -name Cargo.toml -print
+            exit 1
           fi
 
-          if [ -f src-tauri/src/lib.rs ]; then
-            sed -i '' 's/\.pick_folder(/.pick_directory(/g' src-tauri/src/lib.rs
+          if [ -f "$ROOT_CARGO" ]; then
+            if ! grep -q '^zip *=' "$ROOT_CARGO"; then
+              perl -0pi -e 's/\[dependencies\]\n/[dependencies]\nzip = "2"\n/' "$ROOT_CARGO"
+              echo "Added zip = \"2\" to $ROOT_CARGO"
+            fi
           fi
 
-          # 3. Remove unsupported WebviewWindowBuilder.decorations(true).
-          # Decorations are normally enabled by default.
-          if [ -f src-tauri/src/browser_probe_tauri/create.rs ]; then
-            sed -i '' '/\.decorations(true)/d' src-tauri/src/browser_probe_tauri/create.rs
-          fi
+          node <<'EOF'
+          const fs = require('fs')
 
-          echo "Patch complete"
+          const files = [
+            'src-tauri/src/booksource/mod.rs',
+            'src-tauri/src/lib.rs',
+          ]
 
-          echo "Current zip dependency:"
-          grep '^zip *=' src-tauri/Cargo.toml || true
+          for (const file of files) {
+            if (!fs.existsSync(file)) continue
 
-          echo "Checking remaining pick_folder references:"
+            let s = fs.readFileSync(file, 'utf8')
+
+            s = s.replace(
+              /\.set_title\(([^)]*)\)\s*\n\s*\.pick_folder\(/g,
+              '.set_title($1)\n            .set_directory(true)\n            .pick_file('
+            )
+
+            s = s.replace(
+              /\.set_title\(([^)]*)\)\s*\n\s*\.pick_directory\(/g,
+              '.set_title($1)\n            .set_directory(true)\n            .pick_file('
+            )
+
+            fs.writeFileSync(file, s)
+            console.log(`Patched dialog API in ${file}`)
+          }
+          EOF
+
+          node <<'EOF'
+          const fs = require('fs')
+
+          const file = 'src-tauri/src/browser_probe_tauri/create.rs'
+
+          if (fs.existsSync(file)) {
+            let s = fs.readFileSync(file, 'utf8')
+
+            s = s.replace(
+              /\.visible\(visible\)\s*\n\s*\.decorations\(true\);/g,
+              '.visible(visible);'
+            )
+
+            s = s.replace(
+              /\.visible\(visible\)\s*\n\s*builder = builder/g,
+              '.visible(visible);\n            builder = builder'
+            )
+
+            s = s.replace(/\s*\.decorations\(true\)/g, '')
+
+            fs.writeFileSync(file, s)
+            console.log(`Patched decorations API in ${file}`)
+          }
+          EOF
+
+          echo "Zip dependency check:"
+          find src-tauri -name Cargo.toml -print0 | xargs -0 grep -H '^zip *=' || true
+
+          echo "Remaining pick_folder references:"
           grep -R "pick_folder" src-tauri/src || true
 
-          echo "Checking remaining decorations(true) references:"
+          echo "Remaining pick_directory references:"
+          grep -R "pick_directory" src-tauri/src || true
+
+          echo "Remaining decorations(true) references:"
           grep -R "decorations(true)" src-tauri/src || true
+
+          echo "Patch complete"
 
       # Signing disabled: no Apple API key, no Team ID, no export method.
       # Keep this block only as a reminder for future signed builds.
