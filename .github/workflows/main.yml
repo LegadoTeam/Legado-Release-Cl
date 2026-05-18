@@ -422,6 +422,23 @@ jobs:
           echo "JAVA_HOME=$JAVA_HOME" >> $GITHUB_ENV
           echo "BUILD_TOOLS_DIR=/usr/local/lib/android/sdk/build-tools/35.0.0" >> $GITHUB_ENV
 
+      - name: Fix Gradle Java home
+        shell: bash
+        run: |
+          set -e
+
+          echo "JAVA_HOME=$JAVA_HOME"
+          java -version
+
+          while IFS= read -r file; do
+            echo "Patching $file"
+            sed -i '/^[[:space:]]*org\.gradle\.java\.home[[:space:]]*=/d' "$file"
+          done < <(find build "$HOME/.gradle" -name "gradle.properties" -type f 2>/dev/null || true)
+
+          echo "Check remaining org.gradle.java.home:"
+          grep -R "org.gradle.java.home" build "$HOME/.gradle" || true
+
+
       - name: Debug Android env
         shell: bash
         run: |
