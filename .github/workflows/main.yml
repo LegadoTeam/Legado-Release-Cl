@@ -799,7 +799,6 @@ jobs:
         run: |
           mkdir build
           cp -r Source/* build/
-          
 
       - name: Write pnpm workspace policy
         shell: bash
@@ -869,7 +868,20 @@ jobs:
           cargo -V
           xcodebuild -version
 
-      - name: Patch tauri config for CI
+      - name: Install Dependencies
+        shell: bash
+        run: |
+          cd build
+
+          cargo install tauri-cli --locked || true
+          set -e
+          pnpm install --no-frozen-lockfile --config.strict-dep-builds=false || {
+            echo "pnpm install reported ignored build scripts; approving pending builds and retrying"
+            pnpm approve-builds --all || pnpm approve-builds core-js es5-ext esbuild vue-demi unplugin-auto-import unplugin-vue-components || true
+            pnpm install --no-frozen-lockfile --config.strict-dep-builds=false
+          }
+
+      - name: Patch Tauri config for CI static build
         shell: bash
         run: |
           cd build
@@ -878,31 +890,21 @@ jobs:
           const fs = require('fs')
 
           const path = 'src-tauri/tauri.conf.json'
-
           const config = JSON.parse(fs.readFileSync(path, 'utf8'))
 
-          if (config.build) {
-            delete config.build.devUrl
-            delete config.build.beforeDevCommand
+          config.build ??= {}
+
+          delete config.build.devUrl
+          delete config.build.beforeDevCommand
+
+          if (!config.build.frontendDist) {
+            config.build.frontendDist = '../dist'
           }
 
           fs.writeFileSync(path, JSON.stringify(config, null, 2))
-
-          console.log('Patched tauri.conf.json for CI')
+          console.log('Patched tauri.conf.json for CI static build')
+          console.log(JSON.stringify(config.build, null, 2))
           EOF
-
-      - name: Install Dependencies
-        shell: bash
-        run: |
-          cd build
-          
-          cargo install tauri-cli --locked || true
-          set -e
-          pnpm install --no-frozen-lockfile --config.strict-dep-builds=false || {
-            echo "pnpm install reported ignored build scripts; approving pending builds and retrying"
-            pnpm approve-builds --all || pnpm approve-builds core-js es5-ext esbuild vue-demi unplugin-auto-import unplugin-vue-components || true
-            pnpm install --no-frozen-lockfile --config.strict-dep-builds=false
-          }
 
       # Signing disabled: no Apple API key, no Team ID, no export method.
       # Keep this block only as a reminder for future signed builds.
@@ -912,8 +914,6 @@ jobs:
       #     mkdir -p "$RUNNER_TEMP/apple-private-keys"
       #     echo "${{ secrets.APPLE_API_PRIVATE_KEY_BASE64 }}" | base64 --decode > "$RUNNER_TEMP/apple-private-keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8"
       #     test -s "$RUNNER_TEMP/apple-private-keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8"
-
-
 
       - name: Build unsigned iOS app and package IPA
         shell: bash
