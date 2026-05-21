@@ -1,0 +1,10 @@
+## 下载说明
+
+iOS 安装包为 ipa 文件，需要自签名，且系统版本过低将无法使用。  
+Linux-with-dist、Harmony-with-dist 文件为前端文件。  
+deb、rpm、AppImage 对应各自的 Linux 发行版。  
+exe、msi 为 Windows 版。  
+dmg 为 Mac OS。  
+apk 为安卓。
+
+## 下载直链

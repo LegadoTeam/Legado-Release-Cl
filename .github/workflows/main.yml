@@ -989,10 +989,83 @@ jobs:
             git push origin "${{ steps.meta.outputs.tag_name }}"
           fi
 
+      - name: Generate release body with direct links
+        shell: bash
+        run: |
+          REPO="${{ github.repository }}"
+          TAG="${{ steps.meta.outputs.tag_name }}"
+          BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
+
+          if [ ! -f release.txt ]; then
+            echo "release.txt not found"
+            exit 1
+          fi
+
+          find . -type f \
+            \( -name "Legado-Linux-with-dist.zip" \
+            -o -name "Legado-Harmony-with-dist.zip" \
+            -o -name "*.apk" \
+            -o -name "*.ipa" \
+            -o -name "*.AppImage" \
+            -o -name "*.deb" \
+            -o -name "*.rpm" \
+            -o -name "*.dmg" \
+            -o -name "*.exe" \
+            -o -name "*.msi" \) \
+            | sort > release_files.txt
+            
+          printf '\n' >> release.txt
+
+          while IFS= read -r file; do
+            name="$(basename "$file")"
+            encoded_name="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$name")"
+            case "$name" in
+              *.apk)
+                label="安卓 APK"
+                ;;
+              *.ipa)
+                label="iOS IPA"
+                ;;
+              *Linux-with-dist.zip)
+                label="Linux 前端文件"
+                ;;
+              *Harmony-with-dist.zip)
+                label="Harmony 前端文件"
+                ;;
+              *.deb)
+                label="Linux DEB"
+                ;;
+              *.rpm)
+                label="Linux RPM"
+                ;;
+              *.AppImage)
+                label="Linux AppImage"
+                ;;
+              *.exe)
+                label="Windows EXE"
+                ;;
+              *.msi)
+                label="Windows MSI"
+                ;;
+              *.dmg)
+                label="Mac OS DMG"
+                ;;
+              *)
+                label="Release 文件"
+                ;;
+            esac
+
+            echo "- [${label} - ${name}](${BASE_URL}/${encoded_name})" >> release.txt
+          done < release_files.txt
+
+          echo "===== release.txt ====="
+          cat release.txt
+
       - name: Create Release
         uses: softprops/action-gh-release@master
         with:
           tag_name: ${{ steps.meta.outputs.tag_name }}
+          body_path: release.txt
           name: ${{ steps.meta.outputs.release_name }}
           files: |
             **/Legado-Linux-with-dist.zip
