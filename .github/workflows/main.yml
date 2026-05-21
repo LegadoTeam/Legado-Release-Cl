@@ -774,7 +774,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@main
+        uses: actions/checkout@v4
 
       - name: Setup Git Auth
         shell: bash
@@ -784,55 +784,18 @@ jobs:
       - name: Clone Source
         shell: bash
         run: |
-          git clone https://github.com/mgz0227/Legado-Tauri.git Source
-
-      - name: Move Project
-        shell: bash
-        run: |
-          mkdir build
-          cp -r Source/* build/
-          
-
-      - name: Write pnpm workspace policy
-        shell: bash
-        run: |
-          cat > build/pnpm-workspace.yaml <<'EOF'
-          packages:
-            - '.'
-          strictDepBuilds: false
-          allowBuilds:
-            esbuild: true
-            vue-demi: true
-            core-js: true
-            es5-ext: true
-            unplugin-auto-import: true
-            unplugin-vue-components: true
-          onlyBuiltDependencies:
-            - esbuild
-            - vue-demi
-            - core-js
-            - es5-ext
-            - unplugin-auto-import
-            - unplugin-vue-components
-          ignoredBuiltDependencies: []
-          EOF
-          cat > build/.npmrc <<'EOF'
-          strict-dep-builds=false
-          ignore-scripts=false
-          EOF
-          echo "===== build/pnpm-workspace.yaml ====="
-          cat build/pnpm-workspace.yaml
-          echo "===== build/.npmrc ====="
-          cat build/.npmrc
+          git clone --depth=1 https://github.com/mgz0227/Legado-Tauri.git Source
+          mkdir -p build
+          rsync -a --delete Source/ build/
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@master
+        uses: pnpm/action-setup@v4
         with:
           version: 10.33.0
           run_install: false
 
       - name: Setup Node
-        uses: actions/setup-node@main
+        uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
@@ -840,11 +803,8 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Add Rust iOS target
-        shell: bash
-        run: |
-          rustup target add aarch64-apple-ios
+        with:
+          targets: aarch64-apple-ios
 
       - name: Select Xcode
         shell: bash
@@ -861,16 +821,72 @@ jobs:
           cargo -V
           xcodebuild -version
 
+      - name: Write pnpm workspace policy
+        shell: bash
+        run: |
+          cat > build/pnpm-workspace.yaml <<'EOF'
+          packages:
+            - '.'
+
+          strictDepBuilds: false
+
+          allowBuilds:
+            esbuild: true
+            vue-demi: true
+            core-js: true
+            es5-ext: true
+            unplugin-auto-import: true
+            unplugin-vue-components: true
+
+          onlyBuiltDependencies:
+            - esbuild
+            - vue-demi
+            - core-js
+            - es5-ext
+            - unplugin-auto-import
+            - unplugin-vue-components
+
+          ignoredBuiltDependencies: []
+          EOF
+
+          cat > build/.npmrc <<'EOF'
+          strict-dep-builds=false
+          ignore-scripts=false
+          EOF
+
+          echo "===== build/pnpm-workspace.yaml ====="
+          cat build/pnpm-workspace.yaml
+          echo "===== build/.npmrc ====="
+          cat build/.npmrc
+
+      - name: Install Dependencies
+        shell: bash
+        run: |
+          cd build
+          set -euo pipefail
+
+          pnpm install --no-frozen-lockfile --config.strict-dep-builds=false || {
+            echo "pnpm install failed, approving pending build scripts and retrying..."
+            pnpm approve-builds --all || true
+            pnpm install --no-frozen-lockfile --config.strict-dep-builds=false
+          }
+
+          pnpm approve-builds --all || true
+          pnpm rebuild core-js es5-ext esbuild vue-demi unplugin-auto-import unplugin-vue-components || true
+
+          echo "Remaining ignored builds, if any:"
+          pnpm ignored-builds || true
+
       - name: Patch tauri config for CI
         shell: bash
         run: |
           cd build
+          set -euo pipefail
 
           node <<'EOF'
           const fs = require('fs')
 
           const path = 'src-tauri/tauri.conf.json'
-
           const config = JSON.parse(fs.readFileSync(path, 'utf8'))
 
           if (config.build) {
@@ -879,185 +895,22 @@ jobs:
           }
 
           fs.writeFileSync(path, JSON.stringify(config, null, 2))
-
           console.log('Patched tauri.conf.json for CI')
           EOF
 
-      - name: Install Dependencies
-        shell: bash
-        run: |
-          cd build
-          
-          cargo install tauri-cli --locked || true
-          set -e
-          pnpm install --no-frozen-lockfile --config.strict-dep-builds=false || {
-            echo "pnpm install reported ignored build scripts; approving pending builds and retrying"
-            pnpm approve-builds --all || pnpm approve-builds core-js es5-ext esbuild vue-demi unplugin-auto-import unplugin-vue-components || true
-            pnpm install --no-frozen-lockfile --config.strict-dep-builds=false
-          }
-
-      - name: Patch Rust/Tauri compile errors
-        shell: bash
-        run: |
-          cd build
-
-          echo "Patching Rust/Tauri compile errors..."
-
-          node <<'EOF'
-          const fs = require('fs')
-
-          function read(file) {
-            return fs.readFileSync(file, 'utf8')
-          }
-
-          function write(file, text) {
-            fs.writeFileSync(file, text)
-          }
-
-          function patchCargoToml(file) {
-            if (!fs.existsSync(file)) {
-              console.error(`Missing ${file}`)
-              process.exit(1)
-            }
-
-            let s = read(file)
-
-            const depMatch = s.match(/(^|\n)\[dependencies\]\n([\s\S]*?)(?=\n\[|$)/)
-
-            if (!depMatch) {
-              s += '\n[dependencies]\nzip = { version = "8", default-features = false, features = ["deflate"] }\n'
-              write(file, s)
-              console.log(`Added [dependencies] and zip to ${file}`)
-              return
-            }
-
-            const depBlock = depMatch[2]
-
-            if (/^zip\s*=.*/m.test(depBlock)) {
-              s = s.replace(
-                /(^|\n)\[dependencies\]\n([\s\S]*?)(?=\n\[|$)/,
-                (full, prefix, body) => {
-                  const newBody = body.replace(
-                    /^zip\s*=.*$/m,
-                    'zip = { version = "8", default-features = false, features = ["deflate"] }'
-                  )
-                  return `${prefix}[dependencies]\n${newBody}`
-                }
-              )
-              console.log(`Updated existing zip dependency in ${file}`)
-            } else {
-              s = s.replace(
-                /(^|\n)\[dependencies\]\n/,
-                `$1[dependencies]\nzip = { version = "8", default-features = false, features = ["deflate"] }\n`
-              )
-              console.log(`Inserted zip dependency into ${file}`)
-            }
-
-            write(file, s)
-          }
-
-          function patchPicker(file) {
-            if (!fs.existsSync(file)) {
-              console.log(`Skip missing ${file}`)
-              return
-            }
-
-            let s = read(file)
-
-            s = s.replace(/\.pick_directory\s*\(/g, '.pick_file(')
-            s = s.replace(/\.pick_folder\s*\(/g, '.pick_file(')
-
-            write(file, s)
-            console.log(`Patched picker API in ${file}`)
-          }
-
-          function patchCreateRs(file) {
-            if (!fs.existsSync(file)) {
-              console.log(`Skip missing ${file}`)
-              return
-            }
-
-            let s = read(file)
-
-            s = s.replace(
-              /\.visible\(visible\)\s*\n\s*\.decorations\(true\);/g,
-              '.visible(visible);'
-            )
-
-            s = s.replace(
-              /\.visible\(visible\)\s*\n\s*builder = builder/g,
-              '.visible(visible);\n            builder = builder'
-            )
-
-            s = s.replace(
-              /\.visible\(visible\)(?!\s*;)/g,
-              '.visible(visible);'
-            )
-
-            s = s.replace(/\s*\.decorations\(true\)/g, '')
-
-            write(file, s)
-            console.log(`Patched window builder API in ${file}`)
-          }
-
-          patchCargoToml('src-tauri/Cargo.toml')
-
-          if (fs.existsSync('src-tauri/crates/legado-utils/Cargo.toml')) {
-            patchCargoToml('src-tauri/crates/legado-utils/Cargo.toml')
-          }
-
-          patchPicker('src-tauri/src/booksource/mod.rs')
-          patchPicker('src-tauri/src/lib.rs')
-          patchCreateRs('src-tauri/src/browser_probe_tauri/create.rs')
-          EOF
-
-          echo "Verify root Cargo.toml zip dependency:"
-          awk '
-            /^\[dependencies\]$/ { in_deps=1; next }
-            /^\[/ { in_deps=0 }
-            in_deps && /^zip[[:space:]]*=/ { found=1; print }
-            END { exit found ? 0 : 1 }
-          ' src-tauri/Cargo.toml
-
-          echo "Verify no unsupported picker methods remain:"
-          if grep -R "pick_directory\|pick_folder" src-tauri/src/booksource/mod.rs src-tauri/src/lib.rs; then
-            echo "Unsupported picker method still exists"
-            exit 1
-          fi
-
-          echo "Verify visible(visible) line:"
-          grep -n "visible(visible)" src-tauri/src/browser_probe_tauri/create.rs || true
-
-          if grep -n "visible(visible)$" src-tauri/src/browser_probe_tauri/create.rs; then
-            echo "visible(visible) still has no semicolon"
-            exit 1
-          fi
-
-          echo "Verify no decorations(true) remains:"
-          if grep -R "decorations(true)" src-tauri/src/browser_probe_tauri/create.rs; then
-            echo "decorations(true) still exists"
-            exit 1
-          fi
-
-          echo "Patch complete"
-
-      # Signing disabled: no Apple API key, no Team ID, no export method.
-      # Keep this block only as a reminder for future signed builds.
-      # - name: Decode Apple API key
-      #   shell: bash
-      #   run: |
-      #     mkdir -p "$RUNNER_TEMP/apple-private-keys"
-      #     echo "${{ secrets.APPLE_API_PRIVATE_KEY_BASE64 }}" | base64 --decode > "$RUNNER_TEMP/apple-private-keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8"
-      #     test -s "$RUNNER_TEMP/apple-private-keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8"
-
       - name: Recreate iOS project
         shell: bash
+        env:
+          CI: true
+          TAURI_SKIP_DEVSERVER_CHECK: true
+          TAURI_ENV_PLATFORM: ios
+          TAURI_ENV_PLATFORM_VERSION: ios
         run: |
           cd build
+          set -euo pipefail
 
           rm -rf src-tauri/gen/apple
-
-          pnpm tauri ios init --ci
+          pnpm exec tauri ios init --ci
 
       - name: Build unsigned iOS app and package IPA
         shell: bash
@@ -1071,21 +924,9 @@ jobs:
           RUSTFLAGS: -C debuginfo=0
         run: |
           cd build
+          set -euo pipefail
 
           pnpm build
-
-          cd src-tauri
-
-          cargo build \
-            --release \
-            --target aarch64-apple-ios
-
-          cd ..
-
-          export CI=true
-          export TAURI_SKIP_DEVSERVER_CHECK=true
-          export TAURI_ENV_PLATFORM=ios
-          export TAURI_ENV_PLATFORM_VERSION=ios
 
           APPLE_DIR="src-tauri/gen/apple"
           WORKSPACE="$(find "$APPLE_DIR" -type d -name "*.xcworkspace" -print -quit)"
@@ -1096,19 +937,18 @@ jobs:
 
           if [ -z "$WORKSPACE" ]; then
             echo "No Xcode workspace found under $APPLE_DIR"
-            find "$APPLE_DIR" -maxdepth 3 -type d | sort
+            find "$APPLE_DIR" -maxdepth 4 -type d | sort
             exit 1
           fi
 
           SCHEME="legado_tauri_iOS"
           DERIVED_DATA="$PWD/$APPLE_DIR/build/DerivedData"
           OUT_DIR="$PWD/$APPLE_DIR/build/unsigned"
+          IPA_PATH="$PWD/$APPLE_DIR/build/Legado-unsigned.ipa"
 
-          rm -rf "$DERIVED_DATA" "$OUT_DIR"
+          rm -rf "$DERIVED_DATA" "$OUT_DIR" "$IPA_PATH"
           mkdir -p "$OUT_DIR/Payload"
 
-          CI=true \
-          TAURI_SKIP_DEVSERVER_CHECK=true \
           xcodebuild \
             -workspace "$WORKSPACE" \
             -scheme "$SCHEME" \
@@ -1130,126 +970,24 @@ jobs:
 
           if [ -z "$APP_PATH" ]; then
             echo "No unsigned .app found after xcodebuild. Products:"
-            find "$DERIVED_DATA/Build/Products" -maxdepth 4 -print || true
+            find "$DERIVED_DATA/Build/Products" -maxdepth 5 -print || true
             exit 1
           fi
 
           cp -R "$APP_PATH" "$OUT_DIR/Payload/"
 
           cd "$OUT_DIR"
-          zip -r ../Legado-unsigned.ipa Payload
-          cd -
+          ditto -c -k --sequesterRsrc --keepParent Payload "$IPA_PATH"
 
-          test -s "$PWD/$APPLE_DIR/build/Legado-unsigned.ipa"
-
-      - name: Build unsigned iOS app and package IPA
-        shell: bash
-        env:
-          CI: true
-          TAURI_SKIP_DEVSERVER_CHECK: true
-          TAURI_ENV_PLATFORM: ios
-          TAURI_ENV_PLATFORM_VERSION: ios
-          NODE_OPTIONS: --max-old-space-size=6144
-          CARGO_BUILD_JOBS: 1
-          RUSTFLAGS: -C debuginfo=0
-          # Signing env is intentionally disabled.
-          # APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          # APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
-          # APPLE_API_KEY_PATH: ${{ runner.temp }}/apple-private-keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
-          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
-          # IOS_EXPORT_METHOD: app-store-connect
-        run: |
-          cd build
-
-          # Build frontend first. Direct xcodebuild will run the Tauri/Rust script phase,
-          # but it will not run the frontend build command for us.
-          pnpm build
-
-          cd src-tauri
-
-          cargo build \
-            --release \
-            --target aarch64-apple-ios
-
-          cd ..
-
-          export CI=true
-          export TAURI_SKIP_DEVSERVER_CHECK=true
-          export TAURI_ENV_PLATFORM=ios
-          export TAURI_ENV_PLATFORM_VERSION=ios
-
-          APPLE_DIR="src-tauri/gen/apple"
-          WORKSPACE="$(find "$APPLE_DIR" -type d -name "*.xcworkspace" -print -quit)"
-
-          if [ -z "$WORKSPACE" ]; then
-            WORKSPACE="$(find "$APPLE_DIR" -type d -path "*.xcodeproj/project.xcworkspace" -print -quit)"
-          fi
-
-          if [ -z "$WORKSPACE" ]; then
-            echo "No Xcode workspace found under $APPLE_DIR"
-            find "$APPLE_DIR" -maxdepth 3 -type d | sort
-            exit 1
-          fi
-
-          SCHEME="legado_tauri_iOS"
-          DERIVED_DATA="$PWD/$APPLE_DIR/build/DerivedData"
-          OUT_DIR="$PWD/$APPLE_DIR/build/unsigned"
-
-          rm -rf "$DERIVED_DATA" "$OUT_DIR"
-          mkdir -p "$OUT_DIR/Payload"
-
-          # Do not use `pnpm tauri ios build` here: in CI it invokes xcodebuild
-          # without the no-signing build settings, which makes Xcode fail with
-          # "requires a development team". Call xcodebuild directly and append
-          # the no-signing settings at the end so Xcode receives them.
-          CI=true \
-          TAURI_SKIP_DEVSERVER_CHECK=true \
-          xcodebuild \
-            -workspace "$WORKSPACE" \
-            -scheme "$SCHEME" \
-            -sdk iphoneos \
-            -configuration release \
-            -destination "generic/platform=iOS" \
-            -derivedDataPath "$DERIVED_DATA" \
-            build \
-            CODE_SIGN_STYLE=Manual \
-            DEVELOPMENT_TEAM= \
-            CODE_SIGN_IDENTITY= \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGN_ENTITLEMENTS= \
-            PROVISIONING_PROFILE_SPECIFIER= \
-            AD_HOC_CODE_SIGNING_ALLOWED=NO
-
-          APP_PATH="$(find "$DERIVED_DATA/Build/Products" -type d -name "*.app" -path "*iphoneos*" -print -quit)"
-
-          if [ -z "$APP_PATH" ]; then
-            echo "No unsigned .app found after xcodebuild. Products:"
-            find "$DERIVED_DATA/Build/Products" -maxdepth 4 -print || true
-            exit 1
-          fi
-
-          cp -R "$APP_PATH" "$OUT_DIR/Payload/"
-
-          cd "$OUT_DIR"
-          zip -r ../Legado-unsigned.ipa Payload
-          cd -
-
-          test -s "$PWD/$APPLE_DIR/build/Legado-unsigned.ipa"
-
-      - name: Check IPA output
-        shell: bash
-        run: |
-          find build/src-tauri/gen/apple/build -type f -name "*.ipa"
-          test -n "$(find build/src-tauri/gen/apple/build -type f -name '*.ipa' -print -quit)"
+          test -s "$IPA_PATH"
+          echo "Created IPA:"
+          ls -lh "$IPA_PATH"
 
       - name: Upload iOS Artifact
-        uses: actions/upload-artifact@main
+        uses: actions/upload-artifact@v4
         with:
           name: legado-ios-unsigned
-          path: |
-            build/src-tauri/gen/apple/build/**/*.ipa
+          path: build/src-tauri/gen/apple/build/**/*.ipa
 
   release:
     name: Release
