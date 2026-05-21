@@ -232,6 +232,14 @@ jobs:
           version: 10.33.0
           run_install: false
 
+      - name: Configure pnpm store
+        shell: bash
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/build/.pnpm-store"
+          pnpm config set store-dir "${GITHUB_WORKSPACE}/build/.pnpm-store"
+          echo "pnpm store path:"
+          pnpm store path
+
       - name: Setup Node
         uses: actions/setup-node@main
         with:
