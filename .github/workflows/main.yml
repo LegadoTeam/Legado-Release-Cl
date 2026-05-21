@@ -41,6 +41,8 @@ jobs:
           onlyBuiltDependencies:
             - esbuild
             - vue-demi
+            - core-js
+            - es5-ext
           EOF
 
       - name: Setup pnpm
@@ -66,7 +68,7 @@ jobs:
         shell: bash
         run: |
           cd build
-          rm -f pnpm-lock.yaml
+          
           pnpm install --no-frozen-lockfile
 
      # - name: Type Check Frontend
@@ -173,6 +175,8 @@ jobs:
           onlyBuiltDependencies:
             - esbuild
             - vue-demi
+            - core-js
+            - es5-ext
           EOF
 
       - name: Setup pnpm
@@ -270,6 +274,8 @@ jobs:
           onlyBuiltDependencies:
             - esbuild
             - vue-demi
+            - core-js
+            - es5-ext
           EOF
 
       - name: Setup pnpm
@@ -295,7 +301,7 @@ jobs:
         shell: bash
         run: |
           cd build
-          rm -f pnpm-lock.yaml
+          
           pnpm install --no-frozen-lockfile
 
     #  - name: Type Check Frontend
@@ -359,6 +365,8 @@ jobs:
             - unplugin-vue-components
             - esbuild
             - vue-demi
+            - core-js
+            - es5-ext
           EOF
 
       - name: Setup pnpm
@@ -402,7 +410,7 @@ jobs:
         shell: bash
         run: |
           cd build
-          rm -f pnpm-lock.yaml
+          
           pnpm install --no-frozen-lockfile
 
       # - name: Type Check Frontend
@@ -539,6 +547,8 @@ jobs:
           onlyBuiltDependencies:
             - esbuild
             - vue-demi
+            - core-js
+            - es5-ext
           EOF
 
       - name: Setup pnpm
@@ -564,7 +574,7 @@ jobs:
         shell: bash
         run: |
           cd build
-          rm -f pnpm-lock.yaml
+          
           pnpm install --no-frozen-lockfile
 
      # - name: Type Check Frontend
@@ -664,6 +674,8 @@ jobs:
             - unplugin-vue-components
             - esbuild
             - vue-demi
+            - core-js
+            - es5-ext
           EOF
 
       - name: Setup pnpm
@@ -728,7 +740,7 @@ jobs:
         shell: bash
         run: |
           cd build
-          rm -f pnpm-lock.yaml
+          
           cargo install tauri-cli --locked || true
           pnpm install --no-frozen-lockfile
 
