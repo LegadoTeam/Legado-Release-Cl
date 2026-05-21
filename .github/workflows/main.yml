@@ -301,8 +301,15 @@ jobs:
             build/src-tauri/target/release/bundle/msi/*.msi
 
   build-macos:
-    name: Build macOS
-    runs-on: macos-latest
+    name: Build macOS (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - macos-26-intel
 
     steps:
       - name: Checkout
@@ -323,9 +330,6 @@ jobs:
         run: |
           mkdir build
           cp -r Source/* build/
-          
-          
-          
 
       - name: Write pnpm workspace policy
         shell: bash
@@ -382,7 +386,7 @@ jobs:
         shell: bash
         run: |
           cd build
-          
+
           set -e
           pnpm install --no-frozen-lockfile --config.strict-dep-builds=false || {
             echo "pnpm install reported ignored build scripts; approving pending builds and retrying"
@@ -412,7 +416,7 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@main
         with:
-          name: legado-macos-latest
+          name: legado-${{ matrix.os }}
           path: |
             build/src-tauri/target/release/bundle/dmg/*.dmg
   build-android:
