@@ -38,12 +38,33 @@ jobs:
         shell: bash
         run: |
           cat > build/pnpm-workspace.yaml <<'EOF'
+          packages:
+            - '.'
+          strictDepBuilds: false
+          allowBuilds:
+            esbuild: true
+            vue-demi: true
+            core-js: true
+            es5-ext: true
+            unplugin-auto-import: true
+            unplugin-vue-components: true
           onlyBuiltDependencies:
             - esbuild
             - vue-demi
             - core-js
             - es5-ext
+            - unplugin-auto-import
+            - unplugin-vue-components
+          ignoredBuiltDependencies: []
           EOF
+          cat > build/.npmrc <<'EOF'
+          strict-dep-builds=false
+          ignore-scripts=false
+          EOF
+          echo "===== build/pnpm-workspace.yaml ====="
+          cat build/pnpm-workspace.yaml
+          echo "===== build/.npmrc ====="
+          cat build/.npmrc
 
       - name: Setup pnpm
         uses: pnpm/action-setup@master
@@ -69,7 +90,12 @@ jobs:
         run: |
           cd build
           
-          pnpm install --no-frozen-lockfile
+          set -e
+          pnpm install --no-frozen-lockfile --config.strict-dep-builds=false || {
+            echo "pnpm install reported ignored build scripts; approving pending builds and retrying"
+            pnpm approve-builds --all || pnpm approve-builds core-js es5-ext esbuild vue-demi unplugin-auto-import unplugin-vue-components || true
+            pnpm install --no-frozen-lockfile --config.strict-dep-builds=false
+          }
 
      # - name: Type Check Frontend
      #   shell: bash
@@ -172,12 +198,33 @@ jobs:
         shell: bash
         run: |
           cat > build/pnpm-workspace.yaml <<'EOF'
+          packages:
+            - '.'
+          strictDepBuilds: false
+          allowBuilds:
+            esbuild: true
+            vue-demi: true
+            core-js: true
+            es5-ext: true
+            unplugin-auto-import: true
+            unplugin-vue-components: true
           onlyBuiltDependencies:
             - esbuild
             - vue-demi
             - core-js
             - es5-ext
+            - unplugin-auto-import
+            - unplugin-vue-components
+          ignoredBuiltDependencies: []
           EOF
+          cat > build/.npmrc <<'EOF'
+          strict-dep-builds=false
+          ignore-scripts=false
+          EOF
+          echo "===== build/pnpm-workspace.yaml ====="
+          cat build/pnpm-workspace.yaml
+          echo "===== build/.npmrc ====="
+          cat build/.npmrc
 
       - name: Setup pnpm
         uses: pnpm/action-setup@master
@@ -202,7 +249,12 @@ jobs:
         shell: bash
         run: |
           cd build
-          pnpm install --no-frozen-lockfile
+          set -e
+          pnpm install --no-frozen-lockfile --config.strict-dep-builds=false || {
+            echo "pnpm install reported ignored build scripts; approving pending builds and retrying"
+            pnpm approve-builds --all || pnpm approve-builds core-js es5-ext esbuild vue-demi unplugin-auto-import unplugin-vue-components || true
+            pnpm install --no-frozen-lockfile --config.strict-dep-builds=false
+          }
 
     #  - name: Type Check Frontend
     #    shell: bash
@@ -271,12 +323,33 @@ jobs:
         shell: bash
         run: |
           cat > build/pnpm-workspace.yaml <<'EOF'
+          packages:
+            - '.'
+          strictDepBuilds: false
+          allowBuilds:
+            esbuild: true
+            vue-demi: true
+            core-js: true
+            es5-ext: true
+            unplugin-auto-import: true
+            unplugin-vue-components: true
           onlyBuiltDependencies:
             - esbuild
             - vue-demi
             - core-js
             - es5-ext
+            - unplugin-auto-import
+            - unplugin-vue-components
+          ignoredBuiltDependencies: []
           EOF
+          cat > build/.npmrc <<'EOF'
+          strict-dep-builds=false
+          ignore-scripts=false
+          EOF
+          echo "===== build/pnpm-workspace.yaml ====="
+          cat build/pnpm-workspace.yaml
+          echo "===== build/.npmrc ====="
+          cat build/.npmrc
 
       - name: Setup pnpm
         uses: pnpm/action-setup@master
@@ -302,7 +375,12 @@ jobs:
         run: |
           cd build
           
-          pnpm install --no-frozen-lockfile
+          set -e
+          pnpm install --no-frozen-lockfile --config.strict-dep-builds=false || {
+            echo "pnpm install reported ignored build scripts; approving pending builds and retrying"
+            pnpm approve-builds --all || pnpm approve-builds core-js es5-ext esbuild vue-demi unplugin-auto-import unplugin-vue-components || true
+            pnpm install --no-frozen-lockfile --config.strict-dep-builds=false
+          }
 
     #  - name: Type Check Frontend
      #   shell: bash
@@ -360,14 +438,33 @@ jobs:
         shell: bash
         run: |
           cat > build/pnpm-workspace.yaml <<'EOF'
+          packages:
+            - '.'
+          strictDepBuilds: false
+          allowBuilds:
+            esbuild: true
+            vue-demi: true
+            core-js: true
+            es5-ext: true
+            unplugin-auto-import: true
+            unplugin-vue-components: true
           onlyBuiltDependencies:
-            - unplugin-auto-import
-            - unplugin-vue-components
             - esbuild
             - vue-demi
             - core-js
             - es5-ext
+            - unplugin-auto-import
+            - unplugin-vue-components
+          ignoredBuiltDependencies: []
           EOF
+          cat > build/.npmrc <<'EOF'
+          strict-dep-builds=false
+          ignore-scripts=false
+          EOF
+          echo "===== build/pnpm-workspace.yaml ====="
+          cat build/pnpm-workspace.yaml
+          echo "===== build/.npmrc ====="
+          cat build/.npmrc
 
       - name: Setup pnpm
         uses: pnpm/action-setup@master
@@ -411,7 +508,12 @@ jobs:
         run: |
           cd build
           
-          pnpm install --no-frozen-lockfile
+          set -e
+          pnpm install --no-frozen-lockfile --config.strict-dep-builds=false || {
+            echo "pnpm install reported ignored build scripts; approving pending builds and retrying"
+            pnpm approve-builds --all || pnpm approve-builds core-js es5-ext esbuild vue-demi unplugin-auto-import unplugin-vue-components || true
+            pnpm install --no-frozen-lockfile --config.strict-dep-builds=false
+          }
 
       # - name: Type Check Frontend
       #   shell: bash
@@ -544,12 +646,33 @@ jobs:
         shell: bash
         run: |
           cat > build/pnpm-workspace.yaml <<'EOF'
+          packages:
+            - '.'
+          strictDepBuilds: false
+          allowBuilds:
+            esbuild: true
+            vue-demi: true
+            core-js: true
+            es5-ext: true
+            unplugin-auto-import: true
+            unplugin-vue-components: true
           onlyBuiltDependencies:
             - esbuild
             - vue-demi
             - core-js
             - es5-ext
+            - unplugin-auto-import
+            - unplugin-vue-components
+          ignoredBuiltDependencies: []
           EOF
+          cat > build/.npmrc <<'EOF'
+          strict-dep-builds=false
+          ignore-scripts=false
+          EOF
+          echo "===== build/pnpm-workspace.yaml ====="
+          cat build/pnpm-workspace.yaml
+          echo "===== build/.npmrc ====="
+          cat build/.npmrc
 
       - name: Setup pnpm
         uses: pnpm/action-setup@master
@@ -575,7 +698,12 @@ jobs:
         run: |
           cd build
           
-          pnpm install --no-frozen-lockfile
+          set -e
+          pnpm install --no-frozen-lockfile --config.strict-dep-builds=false || {
+            echo "pnpm install reported ignored build scripts; approving pending builds and retrying"
+            pnpm approve-builds --all || pnpm approve-builds core-js es5-ext esbuild vue-demi unplugin-auto-import unplugin-vue-components || true
+            pnpm install --no-frozen-lockfile --config.strict-dep-builds=false
+          }
 
      # - name: Type Check Frontend
      #   shell: bash
@@ -669,14 +797,33 @@ jobs:
         shell: bash
         run: |
           cat > build/pnpm-workspace.yaml <<'EOF'
+          packages:
+            - '.'
+          strictDepBuilds: false
+          allowBuilds:
+            esbuild: true
+            vue-demi: true
+            core-js: true
+            es5-ext: true
+            unplugin-auto-import: true
+            unplugin-vue-components: true
           onlyBuiltDependencies:
-            - unplugin-auto-import
-            - unplugin-vue-components
             - esbuild
             - vue-demi
             - core-js
             - es5-ext
+            - unplugin-auto-import
+            - unplugin-vue-components
+          ignoredBuiltDependencies: []
           EOF
+          cat > build/.npmrc <<'EOF'
+          strict-dep-builds=false
+          ignore-scripts=false
+          EOF
+          echo "===== build/pnpm-workspace.yaml ====="
+          cat build/pnpm-workspace.yaml
+          echo "===== build/.npmrc ====="
+          cat build/.npmrc
 
       - name: Setup pnpm
         uses: pnpm/action-setup@master
@@ -742,7 +889,12 @@ jobs:
           cd build
           
           cargo install tauri-cli --locked || true
-          pnpm install --no-frozen-lockfile
+          set -e
+          pnpm install --no-frozen-lockfile --config.strict-dep-builds=false || {
+            echo "pnpm install reported ignored build scripts; approving pending builds and retrying"
+            pnpm approve-builds --all || pnpm approve-builds core-js es5-ext esbuild vue-demi unplugin-auto-import unplugin-vue-components || true
+            pnpm install --no-frozen-lockfile --config.strict-dep-builds=false
+          }
 
       - name: Patch Rust/Tauri compile errors
         shell: bash
