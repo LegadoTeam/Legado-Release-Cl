@@ -881,30 +881,6 @@ jobs:
             pnpm install --no-frozen-lockfile --config.strict-dep-builds=false
           }
 
-      - name: Patch Tauri config for CI static build
-        shell: bash
-        run: |
-          cd build
-
-          node <<'EOF'
-          const fs = require('fs')
-
-          const path = 'src-tauri/tauri.conf.json'
-          const config = JSON.parse(fs.readFileSync(path, 'utf8'))
-
-          config.build ??= {}
-
-          delete config.build.devUrl
-          delete config.build.beforeDevCommand
-
-          if (!config.build.frontendDist) {
-            config.build.frontendDist = '../dist'
-          }
-
-          fs.writeFileSync(path, JSON.stringify(config, null, 2))
-          console.log('Patched tauri.conf.json for CI static build')
-          console.log(JSON.stringify(config.build, null, 2))
-          EOF
 
       # Signing disabled: no Apple API key, no Team ID, no export method.
       # Keep this block only as a reminder for future signed builds.
